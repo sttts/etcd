@@ -19,6 +19,7 @@ import (
 	"log"
 	"os"
 	"path"
+	"strconv"
 	"time"
 
 	"github.com/coreos/etcd/Godeps/_workspace/src/github.com/codegangsta/cli"
@@ -37,6 +38,8 @@ func NewBackupCommand() cli.Command {
 		Flags: []cli.Flag{
 			cli.StringFlag{Name: "data-dir", Value: "", Usage: "Path to the etcd data dir"},
 			cli.StringFlag{Name: "backup-dir", Value: "", Usage: "Path to the backup dir"},
+			cli.BoolFlag{Name: "keep-cluster-id", Usage: "Do not rewrite the cluster id"},
+			cli.StringFlag{Name: "node-id", Value: "", Usage: "Use custom node id instead of a random value"},
 		},
 		Action: handleBackup,
 	}
@@ -83,8 +86,19 @@ func handleBackup(c *cli.Context) {
 	var metadata etcdserverpb.Metadata
 	pbutil.MustUnmarshal(&metadata, wmetadata)
 	idgen := idutil.NewGenerator(0, time.Now())
-	metadata.NodeID = idgen.Next()
-	metadata.ClusterID = idgen.Next()
+	explicitNodeId := c.String("node-id")
+	if explicitNodeId != "" {
+		metadata.NodeID, err = strconv.ParseUint(explicitNodeId, 16, 64)
+		if err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		metadata.NodeID = idgen.Next()
+	}
+	keepClusterId := c.Bool("keep-cluster-id")
+	if !keepClusterId {
+		metadata.ClusterID = idgen.Next()
+	}
 
 	neww, err := wal.Create(destWAL, pbutil.MustMarshal(&metadata))
 	if err != nil {
